@@ -17,8 +17,8 @@
 ## ⚠️ IMPORTANT: Read the Disclaimers
 
 **Before using V-Shield, you MUST read:**
-- [`DISCLAIMER.md`](DISCLAIMER.md) - Legal disclaimer and liability
-- [`USER_RESPONSIBILITY.md`](USER_RESPONSIBILITY.md) - Your responsibilities as a user
+- [`DISCLAIMER.md`](legal/DISCLAIMER.md) - Legal disclaimer and liability
+- [`USER_RESPONSIBILITY.md`](legal/USER_RESPONSIBILITY.md) - Your responsibilities as a user
 
 **TL;DR:**
 - You are 100% responsible for content you encrypt
