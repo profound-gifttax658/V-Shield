@@ -221,20 +221,26 @@ ffmpeg -framerate 30 -i frames/frame_%04d.png \
 **Encryption:**
 - **Algorithm:** ChaCha20-Poly1305 (AEAD)
 - **Key Size:** 256 bits (derived from token)
-- **Nonce:** Fixed (improvement for v0.2: randomized)
+- **Nonce:** **RANDOM (12-byte, prepended to ciphertext)** - CRITICAL: never reused with same key
 - **Authentication:** Poly1305 MAC
 
 **Token Format:**
 ```
-vshield://{UUID}
+vshield://{BASE58(32-byte key || 16-byte video_id)}
 
-Example: vshield://550e8400-e29b-41d4-a716-446655440000
+Example: vshield://5650f5a0d8c84d0a00c46124b47d394...
 ```
 
+**Important Security Facts:**
+- ✅ Each encryption gets a NEW random nonce (prevents two-time pad attacks)
+- ✅ Each file gets a NEW random token (not deterministic, always unique)
+- ✅ Nonce is stored with ciphertext for decryption
+- ⚠️ If the same (key, nonce) pair is ever used twice, encryption is broken
+
 **Recovery:**
-- Token saved in `metadata.json` in frames directory
-- Token derivable from generator (same exact file → different token)
-- **No recovery service.** Don't lose the token.
+- Token must be kept safe by user
+- Nonce is automatically prepended to ciphertext (no separate storage needed)
+- **No recovery service.** Token loss = permanent data loss.
 
 ---
 
@@ -355,11 +361,12 @@ We welcome contributions! But please read our guidelines:
 
 ## 📚 Documentation
 
-- [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) - Deep dive into system design
-- [`PROTOCOL.md`](docs/PROTOCOL.md) - Frame protocol specification
-- [`YOUTUBE_COMPATIBILITY.md`](docs/YOUTUBE_COMPATIBILITY.md) - Compression analysis
-- [`API.md`](docs/API.md) - Rust API documentation
-- [`ROADMAP.md`](docs/ROADMAP.md) - Detailed project roadmap
+- [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) - System design, data flow, module breakdown
+- [`API.md`](docs/API.md) - Complete Rust API reference with examples
+- [`ROADMAP.md`](docs/ROADMAP.md) - Project phases, timelines, and success criteria
+- [`PROTOCOL.md`](docs/PROTOCOL.md) - Frame protocol specification (under development)
+- [`YOUTUBE_COMPATIBILITY.md`](docs/YOUTUBE_COMPATIBILITY.md) - Compression analysis and testing results (Phase 1.5)
+- [`QUICK_START.md`](docs/QUICK_START.md) - Getting started guide
 
 ---
 
@@ -389,22 +396,28 @@ THE SOFTWARE IS PROVIDED "AS-IS" WITHOUT WARRANTY OF ANY KIND.
 ## 💭 FAQ
 
 ### Q: Can I recover my token if I lose it?
-**A:** No. There is no recovery mechanism.
+**A:** No. There is no recovery mechanism. The token is random and unique per encoding.
 
 ### Q: Will YouTube ban me?
 **A:** If you follow YouTube ToS, no. If you hide violating content, yes.
 
 ### Q: Can I hide copyrighted content?
-**A:** No. Encoding doesn't make copyright infringement legal.
+**A:** No. Encryption doesn't make copyright infringement legal.
 
 ### Q: Isn't this illegal?
 **A:** The tool is neutral. Its legality depends on how YOU use it.
 
 ### Q: How do I back up my token?
-**A:** Save `metadata.json` in multiple secure locations.
+**A:** Save the token string in multiple secure locations (e.g., encrypted password manager, printed paper in safe).
+
+### Q: What if I encode the same file twice?
+**A:** You get a different token each time (randomness). This is by design for security.
 
 ### Q: What if YouTube's compression destroys my video?
-**A:** The system is designed to survive, but no guarantee. Always test first.
+**A:** The system is designed to survive, but no guarantee. Always test first with your specific file and settings.
+
+### Q: How do I safely share the token with someone?
+**A:** Use an encrypted channel (signal, DM, etc). The token grants decryption access, so protect it like a password.
 
 ---
 

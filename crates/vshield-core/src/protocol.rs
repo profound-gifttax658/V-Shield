@@ -174,10 +174,8 @@ impl FrameHeader {
     }
 
     /// Decode header from bytes
+    /// Note: &[u8; 16] guarantees exactly 16 bytes at compile time
     pub fn from_bytes(bytes: &[u8; 16]) -> Result<Self, String> {
-        if bytes.len() < 10 {
-            return Err("Header bytes too short".to_string());
-        }
         Ok(FrameHeader {
             frame_id: u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
             block_size: bytes[4],
@@ -190,100 +188,138 @@ impl FrameHeader {
 }
 
 /// Metadata block stored in the first frame
+/// Fixed-size binary format (232 bytes): 128 (filename) + 8 (size) + 32 (hash) + 64 (token)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetadataBlock {
-    /// Original filename
+    /// Original filename (max 127 chars + null terminator)
     pub filename: String,
     /// Original file size in bytes
     pub file_size: u64,
     /// SHA-256 hash of original file (32 bytes)
     pub file_hash: [u8; 32],
-    /// Unique token/key identifier (UUID as string, Base58 encoded in practice)
+    /// Unique token identifier (vshield://...)
     pub token_id: String,
 }
 
 impl MetadataBlock {
-    pub fn to_bytes(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        let json = serde_json::to_string(self)?;
-        Ok(json.into_bytes())
+    /// Fixed size in bytes
+    pub const SIZE: usize = 128 + 8 + 32 + 64;
+
+    /// Serialize to fixed-size binary (232 bytes)
+    pub fn to_bytes(&self) -> [u8; Self::SIZE] {
+        let mut buf = [0u8; Self::SIZE];
+
+        // filename: 128 bytes null-terminated
+        let name = self.filename.as_bytes();
+        let len = name.len().min(127);
+        buf[..len].copy_from_slice(&name[..len]);
+
+        // file_size: 8 bytes LE
+        buf[128..136].copy_from_slice(&self.file_size.to_le_bytes());
+
+        // file_hash: 32 bytes
+        buf[136..168].copy_from_slice(&self.file_hash);
+
+        // token_id: 64 bytes null-terminated
+        let token = self.token_id.as_bytes();
+        let tlen = token.len().min(63);
+        buf[168..168 + tlen].copy_from_slice(&token[..tlen]);
+
+        buf
     }
 
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
-        let json = String::from_utf8(bytes.to_vec())?;
-        Ok(serde_json::from_str(&json)?)
+    /// Deserialize from fixed-size binary
+    pub fn from_bytes(buf: &[u8]) -> Result<Self, String> {
+        if buf.len() < Self::SIZE {
+            return Err(format!(
+                "Метаданные слишком короткие: {} < {}",
+                buf.len(),
+                Self::SIZE
+            ));
+        }
+
+        let name_end = buf[..128].iter().position(|&b| b == 0).unwrap_or(128);
+        let filename = String::from_utf8_lossy(&buf[..name_end]).to_string();
+
+        let file_size = u64::from_le_bytes(
+            buf[128..136]
+                .try_into()
+                .map_err(|_| "file_size error".to_string())?,
+        );
+
+        let mut file_hash = [0u8; 32];
+        file_hash.copy_from_slice(&buf[136..168]);
+
+        let token_end = buf[168..232].iter().position(|&b| b == 0).unwrap_or(64);
+        let token_id = String::from_utf8_lossy(&buf[168..168 + token_end]).to_string();
+
+        Ok(Self {
+            filename,
+            file_size,
+            file_hash,
+            token_id,
+        })
     }
 }
 
-/// Represents a single data block that contains encoded bits
+/// Single data block encodes 3 bits as one color
+/// Entire block is uniform color (majority voted during decode)
 #[derive(Debug, Clone, Copy)]
 pub struct DataBlock {
-    /// 2D grid of colors, block_size x block_size
-    pub pixels: [[ColorValue; 16]; 16], // Max 16x16
-    /// Actual block size (4, 8, or 16)
+    /// Color value (encodes 3 bits of data)
+    pub color: ColorValue,
+    /// Block size in pixels (4, 8, or 16)
     pub size: u8,
 }
 
 impl DataBlock {
+    /// Create new block
     pub fn new(size: u8) -> Self {
-        DataBlock {
-            pixels: [[ColorValue::Black; 16]; 16],
+        Self {
+            color: ColorValue::Black,
             size,
         }
     }
 
-    /// Encode bits into this block
-    /// For 8 color palette, we can store 3 bits per block (2^3 = 8 colors)
-    pub fn encode(&mut self, value: u8) {
-        // Simple encoding: use the color value directly
-        if value < COLOR_PALETTE_SIZE as u8 {
-            let color = match value {
-                0 => ColorValue::Black,
-                1 => ColorValue::DarkGray,
-                2 => ColorValue::Gray,
-                3 => ColorValue::LightGray,
-                4 => ColorValue::White,
-                5 => ColorValue::DarkRed,
-                6 => ColorValue::DarkBlue,
-                7 => ColorValue::DarkGreen,
-                _ => ColorValue::Black,
-            };
-            // Fill entire block with the color
-            for i in 0..self.size as usize {
-                for j in 0..self.size as usize {
-                    self.pixels[i][j] = color;
-                }
-            }
-        }
+    /// Encode 3 bits into this block
+    pub fn encode(bits: u8, size: u8) -> Self {
+        let color = match bits & 0b111 {
+            0 => ColorValue::Black,
+            1 => ColorValue::DarkGray,
+            2 => ColorValue::Gray,
+            3 => ColorValue::LightGray,
+            4 => ColorValue::White,
+            5 => ColorValue::DarkRed,
+            6 => ColorValue::DarkBlue,
+            7 => ColorValue::DarkGreen,
+            _ => unreachable!(),
+        };
+        Self { color, size }
     }
 
-    /// Decode bits from this block
-    pub fn decode(&self) -> u8 {
-        // Simple decoding: find the most common color
-        let mut color_counts = [0u32; 8];
-        for i in 0..self.size as usize {
-            for j in 0..self.size as usize {
-                match self.pixels[i][j] {
-                    ColorValue::Black => color_counts[0] += 1,
-                    ColorValue::DarkGray => color_counts[1] += 1,
-                    ColorValue::Gray => color_counts[2] += 1,
-                    ColorValue::LightGray => color_counts[3] += 1,
-                    ColorValue::White => color_counts[4] += 1,
-                    ColorValue::DarkRed => color_counts[5] += 1,
-                    ColorValue::DarkBlue => color_counts[6] += 1,
-                    ColorValue::DarkGreen => color_counts[7] += 1,
+    /// Decode using majority vote from actual pixel buffer
+    pub fn decode_from_pixels(pixels: &[u8], stride: usize, x: u32, y: u32, size: u8) -> u8 {
+        let mut counts = [0u32; 8];
+        for dy in 0..size as usize {
+            for dx in 0..size as usize {
+                let idx = (y as usize + dy) * stride + (x as usize + dx) * 3;
+                if idx + 2 < pixels.len() {
+                    let color = ColorValue::from_rgb(pixels[idx], pixels[idx + 1], pixels[idx + 2]);
+                    counts[color as usize] += 1;
                 }
             }
         }
+        counts
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, &c)| c)
+            .map(|(i, _)| i as u8)
+            .unwrap_or(0)
+    }
 
-        let mut max_count = 0;
-        let mut max_color = 0;
-        for (i, &count) in color_counts.iter().enumerate() {
-            if count > max_count {
-                max_count = count;
-                max_color = i as u8;
-            }
-        }
-        max_color
+    /// Get encoded bits from stored color
+    pub fn decode(&self) -> u8 {
+        self.color as u8
     }
 }
 
@@ -322,12 +358,10 @@ impl Frame {
         }
     }
 
-    /// Calculate how many bytes this frame can hold
-    pub fn capacity(&self) -> usize {
-        // Each color value = 3 bits (log2(8))
-        // Each block can hold multiple pixels of data
-        let bytes_per_block = 1; // Simplified: 1 byte per block for now
-        self.header.data_blocks_count as usize * bytes_per_block
+    /// Calculate data capacity in bytes
+    /// Each block holds 3 bits (8-color palette), so divide total bits by 8
+    pub fn capacity_bytes(&self) -> usize {
+        (self.header.data_blocks_count as usize * 3) / 8
     }
 }
 
@@ -368,7 +402,7 @@ mod tests {
             token_id: "token-123".to_string(),
         };
 
-        let bytes = metadata.to_bytes().unwrap();
+        let bytes = metadata.to_bytes();
         let decoded = MetadataBlock::from_bytes(&bytes).unwrap();
 
         assert_eq!(decoded.filename, "test.mp4");

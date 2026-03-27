@@ -222,7 +222,9 @@ fn decrypt_data(ciphertext: &[u8], token: &str) -> Result<Vec<u8>, Box<dyn std::
     let cipher = ChaCha20Poly1305::new(key_bytes[..].into());
 
     // Use the same fixed nonce (must match encoder's nonce)
-    let nonce = Nonce::from([0u8; 12]);
+    fn decrypt_data(data: &[u8], token: &Token) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        vshield_core::crypto::decrypt(token.key_bytes(), data).map_err(|e| e.into())
+    }
 
     let plaintext = cipher
         .decrypt(&nonce, ciphertext)
@@ -246,7 +248,10 @@ mod tests {
             hasher.update(token.as_bytes());
             let key_bytes: [u8; 32] = hasher.finalize().into();
             let cipher = ChaCha20Poly1305::new(Key::<ChaCha20Poly1305>::from(key_bytes));
-            let nonce = Nonce::from([0u8; 12]);
+            fn decrypt_data(data: &[u8], token: &Token) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    vshield_core::crypto::decrypt(token.key_bytes(), data)
+        .map_err(|e| e.into())
+}
             cipher
                 .encrypt(&nonce, plaintext)
                 .expect("Encryption failed")

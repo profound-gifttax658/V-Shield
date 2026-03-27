@@ -43,11 +43,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 Configuration:");
     println!("   Input:  {:?}", args.input);
     println!("   Output: {:?}", args.output);
-    println!(
-        "   Token:  {}...{}",
-        &args.token[0..std::cmp::min(16, args.token.len())],
-        &args.token[std::cmp::max(0, args.token.len() - 8)..]
-    );
+    let token = &args.token;
+    let preview_start = &token[..token.len().min(16)];
+    let preview_end = &token[token.len().saturating_sub(8)..];
+    println!("   Token:  {}...{}", preview_start, preview_end);
     println!();
 
     println!("🔧 Decoding...");

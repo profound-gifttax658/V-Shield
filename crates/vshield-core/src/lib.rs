@@ -7,7 +7,10 @@ pub mod protocol;
 pub mod anchor;
 pub mod interleave;
 pub mod ecc;
+pub mod crypto;
+pub mod token;
 
+pub use token::Token;
 pub use protocol::{Frame, FrameHeader, MetadataBlock, ColorValue};
 pub use anchor::{DetectedAnchor, AnchorPosition};
 pub use interleave::InterleavingStrategy;

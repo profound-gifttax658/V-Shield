@@ -3,6 +3,7 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
 use uuid::Uuid;
+use vshield_core::token::Token;
 /// V-Shield Encoder
 ///
 /// Converts files into video frames that survive YouTube compression.
@@ -84,16 +85,9 @@ impl Encoder {
             &hash_hex[0..16.min(hash_hex.len())]
         );
 
-        // Generate token (random key)
-        let token = generate_token();
-        println!("[Encoder] Generated token: {}", token);
-
-        // Encrypt data
-        let encrypted_data = encrypt_data(&file_data, &token)?;
-        println!(
-            "[Encoder] Encrypted data size: {} bytes",
-            encrypted_data.len()
-        );
+        let token = Token::generate();
+        let encrypted_data = vshield_core::crypto::encrypt(token.key_bytes(), &file_data)?;
+        let token_string = token.to_string(); // для сохранения в metadata.json
 
         // Create Reed-Solomon configuration
         // RS requires total_symbols <= 255
@@ -466,12 +460,6 @@ impl EncodedOutput {
     }
 }
 
-/// Generate a unique token for this encoding
-fn generate_token() -> String {
-    let uuid = Uuid::new_v4();
-    format!("vshield://{}", uuid)
-}
-
 /// Encrypt data using ChaCha20-Poly1305
 fn encrypt_data(data: &[u8], token: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     use chacha20poly1305::aead::KeyInit;
@@ -484,7 +472,9 @@ fn encrypt_data(data: &[u8], token: &str) -> Result<Vec<u8>, Box<dyn std::error:
     let cipher = ChaCha20Poly1305::new(key_bytes[..].into());
 
     // Use a fixed nonce (in production, this should be derived/stored)
-    let nonce = Nonce::from([0u8; 12]);
+    fn encrypt_data(data: &[u8], token: &Token) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        vshield_core::crypto::encrypt(token.key_bytes()).map_err(|e| e.into())
+    }
 
     let ciphertext = cipher
         .encrypt(&nonce, data)
