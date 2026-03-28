@@ -379,6 +379,31 @@ mod tests {
     fn test_color_yuv_conversion() {
         let (y, u, v) = ColorValue::White.to_yuv();
         assert!(y >= 240); // White should be bright
+        assert!(u >= 120 && u <= 136, "U value out of expected range: {}", u);
+        assert!(v >= 120 && v <= 136, "V value out of expected range: {}", v);
+    }
+
+    #[test]
+    fn test_color_yuv_preservation() {
+        // Checking that palette colors are well distributed in YUV space
+        let colors = vec![
+            ColorValue::Black,
+            ColorValue::White,
+            ColorValue::DarkRed,
+            ColorValue::DarkBlue,
+            ColorValue::DarkGreen,
+        ];
+
+        let mut prev_y = -1i32;
+        for color in colors {
+            let (y, _u, _v) = color.to_yuv();
+            // Убедимся, что цвета различимы по яркости
+            assert!(
+                (y as i32 - prev_y).abs() > 20,
+                "Colors too similar in brightness"
+            );
+            prev_y = y as i32;
+        }
     }
 
     #[test]

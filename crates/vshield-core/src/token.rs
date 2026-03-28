@@ -6,9 +6,6 @@ use rand::rngs::OsRng;
 /// Each encryption produces a unique token.
 use rand::RngCore;
 
-/// Maximum token string length (Base58 encoding + prefix)
-const TOKEN_STRING_MAX: usize = 64;
-
 /// Cryptographic token for ChaCha20-Poly1305 encryption
 #[derive(Debug, Clone)]
 pub struct Token {
@@ -117,6 +114,8 @@ impl Token {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TOKEN_STRING_MAX: usize = 75; // 64 for Base58 + prefix vshield://
 
     #[test]
     fn token_generate() {

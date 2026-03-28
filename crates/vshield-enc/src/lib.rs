@@ -1,8 +1,6 @@
-use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Nonce};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
-use uuid::Uuid;
 use vshield_core::token::Token;
 /// V-Shield Encoder
 ///
@@ -86,8 +84,8 @@ impl Encoder {
         );
 
         let token = Token::generate();
-        let encrypted_data = vshield_core::crypto::encrypt(token.key_bytes(), &file_data)?;
-        let token_string = token.to_string(); // для сохранения в metadata.json
+        let encrypted_data = encrypt_data(&file_data, &token)?;
+        let token_string = token.to_string();
 
         // Create Reed-Solomon configuration
         // RS requires total_symbols <= 255
@@ -125,7 +123,7 @@ impl Encoder {
             filename: filename.clone(),
             file_size: file_size as u64,
             file_hash,
-            token_id: token.clone(),
+            token_id: token_string.clone(),
         };
 
         // Generate frames
@@ -148,7 +146,7 @@ impl Encoder {
 
         Ok(EncodedOutput {
             frames,
-            token,
+            token: token_string,
             metadata,
             num_frames: num_frames as u32,
         })
@@ -461,47 +459,20 @@ impl EncodedOutput {
 }
 
 /// Encrypt data using ChaCha20-Poly1305
-fn encrypt_data(data: &[u8], token: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    use chacha20poly1305::aead::KeyInit;
-
-    // Derive a 32-byte key from the token
-    let mut hasher = Sha256::new();
-    hasher.update(token.as_bytes());
-    let key_bytes: [u8; 32] = hasher.finalize().into();
-
-    let cipher = ChaCha20Poly1305::new(key_bytes[..].into());
-
-    // Use a fixed nonce (in production, this should be derived/stored)
-    fn encrypt_data(data: &[u8], token: &Token) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        vshield_core::crypto::encrypt(token.key_bytes()).map_err(|e| e.into())
-    }
-
-    let ciphertext = cipher
-        .encrypt(&nonce, data)
-        .map_err(|e| format!("Encryption failed: {}", e))?;
-
-    Ok(ciphertext)
+fn encrypt_data(data: &[u8], token: &Token) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    vshield_core::crypto::encrypt(token.key_bytes(), data).map_err(|e| e.into())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_token_generation() {
-        let token1 = generate_token();
-        let token2 = generate_token();
-
-        assert!(token1.starts_with("vshield://"));
-        assert_ne!(token1, token2);
-    }
-
     #[test]
     fn test_encryption() {
+        use vshield_core::token::Token;
         let data = b"Hello, V-Shield!";
-        let token = "test-token";
+        let token = Token::generate();
 
-        let encrypted = encrypt_data(data, token).unwrap();
+        let encrypted = encrypt_data(data, &token).unwrap();
         assert_ne!(&encrypted[..], data);
         assert!(!encrypted.is_empty());
     }

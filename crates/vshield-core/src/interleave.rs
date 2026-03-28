@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn test_checkerboard_interleaving() {
-        let map = InterleavingMap::new(8, 6, 24, InterleavingStrategy::Checkerboard);
+        let _map = InterleavingMap::new(8, 6, 24, InterleavingStrategy::Checkerboard);
 
         // Checkerboard should only use even positions
         let mut count = 0;

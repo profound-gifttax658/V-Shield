@@ -1,4 +1,3 @@
-use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Nonce};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
@@ -211,55 +210,24 @@ impl DecodedOutput {
 }
 
 /// Decrypt data using ChaCha20-Poly1305
-fn decrypt_data(ciphertext: &[u8], token: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    use chacha20poly1305::aead::KeyInit;
-
-    // Derive a 32-byte key from the token (same as encoder)
-    let mut hasher = Sha256::new();
-    hasher.update(token.as_bytes());
-    let key_bytes: [u8; 32] = hasher.finalize().into();
-
-    let cipher = ChaCha20Poly1305::new(key_bytes[..].into());
-
-    // Use the same fixed nonce (must match encoder's nonce)
-    fn decrypt_data(data: &[u8], token: &Token) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        vshield_core::crypto::decrypt(token.key_bytes(), data).map_err(|e| e.into())
-    }
-
-    let plaintext = cipher
-        .decrypt(&nonce, ciphertext)
-        .map_err(|e| format!("Decryption failed: {}", e))?;
-
-    Ok(plaintext)
+fn decrypt_data(ciphertext: &[u8], token_str: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    use vshield_core::token::Token;
+    let token = Token::from_str(token_str).map_err(|e| format!("Неверный токен: {}", e))?;
+    vshield_core::crypto::decrypt(token.key_bytes(), ciphertext).map_err(|e| e.into())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_decryption() {
-        let token = "test-token";
+        use vshield_core::token::Token;
+        let token = Token::generate();
         let plaintext = b"Hello, V-Shield!";
 
-        // Encrypt
-        let ciphertext = {
-            let mut hasher = Sha256::new();
-            hasher.update(token.as_bytes());
-            let key_bytes: [u8; 32] = hasher.finalize().into();
-            let cipher = ChaCha20Poly1305::new(Key::<ChaCha20Poly1305>::from(key_bytes));
-            fn decrypt_data(data: &[u8], token: &Token) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    vshield_core::crypto::decrypt(token.key_bytes(), data)
-        .map_err(|e| e.into())
-}
-            cipher
-                .encrypt(&nonce, plaintext)
-                .expect("Encryption failed")
-        };
+        let encrypted = vshield_core::crypto::encrypt(token.key_bytes(), plaintext).unwrap();
+        let decrypted = vshield_core::crypto::decrypt(token.key_bytes(), &encrypted).unwrap();
 
-        // Decrypt
-        let decrypted = decrypt_data(&ciphertext, token).expect("Decryption failed");
-
-        assert_eq!(plaintext, decrypted.as_slice());
+        assert_eq!(plaintext.to_vec(), decrypted);
     }
 }
