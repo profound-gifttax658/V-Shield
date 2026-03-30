@@ -5,9 +5,8 @@
 ///
 /// Strategy: Add 20-30% redundancy. If up to K erasures occur,
 /// RS can reconstruct all original data as long as K < redundancy_symbols.
-use std::cmp::min;
-
 use reed_solomon_erasure::galois_8::ReedSolomon;
+use std::cmp::min;
 
 /// Reed-Solomon configuration
 #[derive(Debug, Clone, Copy)]
@@ -52,6 +51,7 @@ impl ECCConfig {
 /// Uses the reed-solomon-erasure crate for actual encoding/decoding
 pub struct RSEncoder {
     config: ECCConfig,
+    rs: ReedSolomon,
 }
 
 impl RSEncoder {
@@ -60,12 +60,15 @@ impl RSEncoder {
         // Standard RS codes are typically (255, K) where K <= 255
         if config.total_symbols > 255 {
             return Err(format!(
-                "RS code requires total_symbols <= 255, got {}",
+                "RS code requires total_symbols <=255, got{}",
                 config.total_symbols
             ));
         }
 
-        Ok(RSEncoder { config })
+        let rs = ReedSolomon::new(config.data_symbols, config.parity_symbols)
+            .map_err(|e| format!("Failed to create Reed-Solomon encoder: {:?}", e))?;
+
+        Ok(RSEncoder { config, rs })
     }
 
     /// Get the configuration
@@ -84,9 +87,6 @@ impl RSEncoder {
             ));
         }
 
-        let rs = ReedSolomon::new(self.config.data_symbols, self.config.parity_symbols)
-            .map_err(|e| format!("Failed to create Reed-Solomon encoder: {:?}", e))?;
-
         let mut buffer = vec![0u8; self.config.total_symbols];
 
         // Set data shards
@@ -94,7 +94,8 @@ impl RSEncoder {
         let mut shards: Vec<&mut [u8]> = buffer.chunks_mut(1).collect();
 
         // Compute parity
-        rs.encode(&mut shards)
+        self.rs
+            .encode(&mut shards)
             .map_err(|e| format!("Reed-Solomon encoding failed: {:?}", e))?;
 
         Ok(buffer)
@@ -112,20 +113,16 @@ impl RSEncoder {
             ));
         }
 
-        use reed_solomon_erasure::galois_8::ReedSolomon;
-
-        let rs = ReedSolomon::new(self.config.data_symbols, self.config.parity_symbols)
-            .map_err(|e| format!("Failed to create Reed-Solomon decoder: {:?}", e))?;
-
         let mut shards: Vec<Option<Vec<u8>>> =
             symbols.iter().map(|opt| opt.map(|b| vec![b])).collect();
 
         // Recover missing shards
-        rs.reconstruct(&mut shards)
+        self.rs
+            .reconstruct(&mut shards)
             .map_err(|e| format!("Reed-Solomon reconstruction failed: {:?}", e))?;
 
         // Extract data shards
-        let mut result = Vec::new();
+        let mut result = Vec::with_capacity(self.config.data_symbols);
         for i in 0..self.config.data_symbols {
             if let Some(shard) = &shards[i] {
                 if !shard.is_empty() {
@@ -156,7 +153,8 @@ impl RSEncoder {
 /// Important: Each block can be decoded independently, but
 /// interleaving distributes them across the frame
 pub struct MultiBlockDecoder {
-    blocks: Vec<RSEncoder>,
+    encoder: RSEncoder,
+    num_blocks: usize,
 }
 
 impl MultiBlockDecoder {
@@ -165,16 +163,17 @@ impl MultiBlockDecoder {
         data_symbols_per_block: usize,
         redundancy_percent: u8,
     ) -> Result<Self, String> {
-        let mut blocks = Vec::new();
-        for _ in 0..num_blocks {
-            let config = ECCConfig::new(data_symbols_per_block, redundancy_percent);
-            blocks.push(RSEncoder::new(config)?);
-        }
-        Ok(MultiBlockDecoder { blocks })
+        let config = ECCConfig::new(data_symbols_per_block, redundancy_percent);
+        let encoder = RSEncoder::new(config)?;
+
+        Ok(MultiBlockDecoder {
+            encoder,
+            num_blocks,
+        })
     }
 
     pub fn num_blocks(&self) -> usize {
-        self.blocks.len()
+        self.num_blocks
     }
 
     /// Decode a single block
@@ -183,20 +182,20 @@ impl MultiBlockDecoder {
         block_idx: usize,
         symbols: &[Option<u8>],
     ) -> Result<Vec<u8>, String> {
-        if block_idx >= self.blocks.len() {
+        if block_idx >= self.num_blocks {
             return Err(format!("Block index {} out of range", block_idx));
         }
-        self.blocks[block_idx].decode(symbols)
+        self.encoder.decode(symbols)
     }
 
     /// Get total capacity with ECC
     pub fn total_capacity(&self) -> usize {
-        self.blocks.iter().map(|b| b.config().total_symbols).sum()
+        self.encoder.config().total_symbols * self.num_blocks
     }
 
     /// Get raw data capacity (without ECC overhead)
     pub fn data_capacity(&self) -> usize {
-        self.blocks.iter().map(|b| b.config().data_symbols).sum()
+        self.encoder.config().data_symbols * self.num_blocks
     }
 }
 
